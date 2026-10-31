@@ -1,19 +1,35 @@
 name: lint
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Install poetry
-        run: pipx install poetry
-      - name: Setup python for ${{ matrix.python-version }}
+        # Match the tooling used by the Python 3.7 test job.
+        run: |
+          printf '%s\n' 'virtualenv==20.26.6' 'packaging==23.2' > "$RUNNER_TEMP/poetry-constraints.txt"
+          pipx install poetry==1.8.5 --pip-args="-c $RUNNER_TEMP/poetry-constraints.txt"
+      - name: Setup python for lint
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.10'
+          cache: poetry
+          # poetry.lock is not tracked in this repository.
+          cache-dependency-path: pyproject.toml
       - name: Install dependencies
-        run: poetry install --only=dev
+        run: |
+          poetry env use python
+          poetry install --only=dev --no-interaction
       - name: Run style check
         run: poetry run make style_check

@@ -1,23 +1,38 @@
 name: test
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
     strategy:
       matrix:
-        os: [ ubuntu-latest ]
-        python-version: ['3.7.13', '3.8.12', '3.9.12', '3.10.4']
+        python-version: ['3.7', '3.8', '3.9', '3.10']
     steps:
       - uses: actions/checkout@v4
       - name: Install poetry
-        run: pipx install poetry
+        # Poetry runs virtualenv and packaging code under the Python 3.7 target.
+        run: |
+          printf '%s\n' 'virtualenv==20.26.6' 'packaging==23.2' > "$RUNNER_TEMP/poetry-constraints.txt"
+          pipx install poetry==1.8.5 --pip-args="-c $RUNNER_TEMP/poetry-constraints.txt"
       - name: Setup python for ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: poetry
+          # poetry.lock is not tracked in this repository.
+          cache-dependency-path: pyproject.toml
       - name: Install dependencies
-        run: poetry install
-      - name: Run tests for Python-${{ matrix.python-version }} with ${{ matrix.os }}
+        run: |
+          poetry env use python
+          poetry install --no-interaction
+      - name: Run tests for Python-${{ matrix.python-version }}
         run: poetry run pytest
